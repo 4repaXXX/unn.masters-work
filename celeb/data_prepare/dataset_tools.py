@@ -2,7 +2,6 @@ import os
 import cv2
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 def extract_zip_with_cleanup(root_path, extract_to=None, delete_after=False):
     """
@@ -68,7 +67,7 @@ def prepare_and_save_data(
     
     for split in splits:
         for cls in classes:
-            os.makedirs(os.path.join(output_dir, split, cls), exist_ok=True)
+            create_directory(os.path.join(output_dir, split, cls))
     
     real_images = [f for f in os.listdir(real_dir) 
                   if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
@@ -128,75 +127,6 @@ def prepare_and_save_data(
     return train_dir, val_dir, test_dir
 
 
-def create_data_generators(
-    train_dir, val_dir, test_dir,
-    target_size=(299, 299),
-    batch_size=32,
-    random_state=42,
-    augmentation=False,
-    class_mode='binary'
-):
-    """
-    Создает потоковые генераторы для train/val/test данных
-    
-    Parameters:
-        data_dir (str): Путь к директории с данными (должна содержать train/val/test)
-        target_size (tuple): Размер изображений (ширина, высота)
-        batch_size (int): Размер батча
-        augmentation (bool): Применять ли аугментацию для тренировочных данных
-        class_mode (str): Тип классификации ('binary' или 'categorical')
-    
-    Returns:
-        tuple: (train_gen, val_gen, test_gen)
-    """
-    
-    if augmentation:
-        train_datagen = ImageDataGenerator(
-            preprocessing_function=tf.keras.applications.xception.preprocess_input,
-            rotation_range=20,
-            width_shift_range=0.2,
-            height_shift_range=0.2,
-            shear_range=0.2,
-            zoom_range=0.2,
-            horizontal_flip=True,
-            fill_mode='nearest'
-        )
-    else:
-        train_datagen = ImageDataGenerator(preprocessing_function=tf.keras.applications.xception.preprocess_input)
-    
-    val_test_datagen = ImageDataGenerator(preprocessing_function=tf.keras.applications.xception.preprocess_input)
-    
-    # Lables
-    # real/ -> класс 0
-    # fake/ -> класс 1
-    train_gen = train_datagen.flow_from_directory(
-        train_dir,
-        target_size=target_size,
-        batch_size=batch_size,
-        class_mode=class_mode,
-        shuffle=True,
-        seed=random_state
-    )
-    
-    val_gen = val_test_datagen.flow_from_directory(
-        val_dir,
-        target_size=target_size,
-        batch_size=batch_size,
-        class_mode=class_mode,
-        shuffle=False
-    )
-    
-    test_gen = val_test_datagen.flow_from_directory(
-        test_dir,
-        target_size=target_size,
-        batch_size=batch_size,
-        class_mode=class_mode,
-        shuffle=False
-    )
-    
-    print("\nClass indices:", train_gen.class_indices)
-    print(f"Train samples: {train_gen.samples}")
-    print(f"Val samples: {val_gen.samples}")
-    print(f"Test samples: {test_gen.samples}")
-    
-    return train_gen, val_gen, test_gen
+def create_directory(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
