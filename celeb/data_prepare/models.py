@@ -40,6 +40,10 @@ class DataLoader:
     def load(self, output_dir):
         return self._init_data(os.path.join(output_dir, self._postfix))
 
+    def load_genrators(self, output_dir):
+        train_dir, val_dir, test_dir = self._init_data(os.path.join(output_dir, self._postfix))
+        return self._create_data_generators(train_dir, val_dir, test_dir)
+
     def _init_data(self, output_dir):
         
         fake_images_path, real_images_path = extract_zip_with_cleanup(self._image_archive_path)
@@ -131,16 +135,10 @@ class DataLoader:
         return train_gen, val_gen, test_gen
 
 class TrainedModel:
-    def __init__(self, models_dir, model_type=ModelType.XCEPTION, input_shape=(299, 299, 3), fine_tune=False):
+    def __init__(self, model_type, input_shape):
         self._model_type = model_type
         self._input_shape = input_shape
-        self._fine_tune = fine_tune
         self._base_model = self._build_base_model()
-        self._model = self._build_model()
-        self._models_dir = os.path.join(models_dir, 'x')
-        if self._model_type == ModelType.EFFICIENTNET:
-            self._models_dir = os.path.join(models_dir, 'net')
-        create_directory(self._models_dir)
 
     def _build_base_model(self):
         if self._model_type == ModelType.EFFICIENTNET:
@@ -157,6 +155,12 @@ class TrainedModel:
             )
         return base_model
     
+
+class FeatureExtractorModel(TrainedModel):
+    def __init__(self, model_type=ModelType.XCEPTION, input_shape=(299, 299, 3), fine_tune=False):
+        super().__init__(model_type, input_shape, False)
+        self._model = self._build_model()
+
     def _build_model(self):
         inputs = Input(shape=self._input_shape)
         
@@ -189,11 +193,17 @@ class TrainedModel:
 
         features = self._model.predict(processed_frames)
         return features
-
+        
+        
 class FineTunedModel(TrainedModel):
 
-    def __init__(self, models_dir, model_type=ModelType.XCEPTION, input_shape=(299, 299, 3)):
-        super().__init__(models_dir, model_type, input_shape, fine_tune=True)
+    def __init__(self, models_dir, funetune_model_name, model_type, input_shape):
+        super().__init__(model_type, input_shape)
+        self._fine_tune = True
+        self._model = self._build_model()
+        self._funetune_model_name = funetune_model_name
+        self._models_dir = models_dir
+        create_directory(models_dir)
 
     def _build_model(self):
         inputs = Input(shape=self._input_shape)
@@ -202,6 +212,8 @@ class FineTunedModel(TrainedModel):
         x = GlobalAveragePooling2D()(x)
         x = BatchNormalization()(x)
         x = Dense(256, activation='relu')(x)
+        x = Dropout(0.5)(x) 
+        x = Dense(1, activation="sigmoid")(x)
 
         model = Model(inputs=inputs, outputs=x)
         model.compile(
@@ -222,7 +234,6 @@ class FineTunedModel(TrainedModel):
         Parameters:
             train_generator: генератор тренировочных данных
             val_generator: генератор валидационных данных
-            fine_tune: выполнять ли дообучение
             initial_epochs: количество эпох начального обучения
             fine_tune_epochs: количество эпох дообучения
         """
@@ -272,7 +283,7 @@ class FineTunedModel(TrainedModel):
             validation_data=val_generator,
             callbacks=[
                 ModelCheckpoint(
-                    os.path.join(self._models_dir, "xception_finetune_deepfake_model.h5"),
+                    os.path.join(self._models_dir, self._funetune_model_name),
                     monitor="val_auc",
                     save_best_only=True,
                     mode="max"
@@ -291,3 +302,25 @@ class FineTunedModel(TrainedModel):
         }
         
         return self._model, full_history
+
+    def load_trained_model():
+        return tf.keras.models.load_model(self._models_dir)
+
+class XFineTunedModel(FineTunedModel):
+    def __init__(self, models_dir):
+        x_models_dir = os.path.join(models_dir, 'x')
+        model_type=ModelType.XCEPTION
+        input_shape=(299, 299, 3)
+        funetune_model_name="xception_finetune_deepfake_model.h5"
+        super().__init__(x_models_dir, funetune_model_name, model_type, input_shape)
+
+
+class NetFineTunedModel(FineTunedModel):
+    def __init__(self, models_dir):
+        model_type=ModelType.EFFICIENTNET
+        funetune_model_name="net_finetune_deepfake_model.h5"
+        net_models_dir = os.path.join(models_dir, 'net')
+        input_shape=(224, 224, 3)
+        super().__init__(net_models_dir, funetune_model_name, model_type, input_shape)
+        
+    
