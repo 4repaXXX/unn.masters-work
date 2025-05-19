@@ -6,6 +6,7 @@ __pycache__/
 *$py.class
 .ipynb_checkpoints
 *.png
+*models/
 
 # C extensions
 *.so

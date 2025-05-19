@@ -32,9 +32,11 @@ class DataLoader:
         self._augmentation = augmentation
         self._preprocess_func = tf.keras.applications.xception.preprocess_input
         self._postfix = 'x'
+        self._image_size = (299, 299)
         if self._model_type == ModelType.EFFICIENTNET:
             self._postfix = 'net'
             self._preprocess_func = tf.keras.applications.efficientnet.preprocess_input
+            self._image_size = (224, 224)
             
 
     def load(self, output_dir):
@@ -42,6 +44,7 @@ class DataLoader:
 
     def load_genrators(self, output_dir):
         train_dir, val_dir, test_dir = self._init_data(os.path.join(output_dir, self._postfix))
+        print(train_dir, val_dir, test_dir)
         return self._create_data_generators(train_dir, val_dir, test_dir)
 
     def _init_data(self, output_dir):
@@ -60,7 +63,6 @@ class DataLoader:
         train_dir, 
         val_dir, 
         test_dir,
-        target_size=(299, 299),
         batch_size=32,
         random_state=42,
         class_mode='binary'
@@ -104,7 +106,7 @@ class DataLoader:
         # fake/ -> class 1
         train_gen = train_datagen.flow_from_directory(
             train_dir,
-            target_size=target_size,
+            target_size=self._image_size,
             batch_size=batch_size,
             class_mode=class_mode,
             shuffle=True,
@@ -113,7 +115,7 @@ class DataLoader:
         
         val_gen = val_test_datagen.flow_from_directory(
             val_dir,
-            target_size=target_size,
+            target_size=self._image_size,
             batch_size=batch_size,
             class_mode=class_mode,
             shuffle=False
@@ -121,7 +123,7 @@ class DataLoader:
         
         test_gen = val_test_datagen.flow_from_directory(
             test_dir,
-            target_size=target_size,
+            target_size=self._image_size,
             batch_size=batch_size,
             class_mode=class_mode,
             shuffle=False
