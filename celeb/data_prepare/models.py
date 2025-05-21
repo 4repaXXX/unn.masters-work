@@ -1,3 +1,5 @@
+import datetime
+
 import tensorflow as tf
 import numpy as np
 from keras.models import Model, Sequential
@@ -15,6 +17,7 @@ from keras.layers import (
     MaxPool2D,
 )
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.callbacks import TensorBoard
 from enum import Enum
 import os
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
@@ -165,13 +168,11 @@ class TrainedModel:
                 input_shape=self._input_shape
             )
         return base_model
-        
-        
-class FineTunedModel(TrainedModel):
 
-    def __init__(self, models_dir, funetune_model_name, model_type, input_shape):
+class TunedModel(TrainedModel):
+    def __init__(self, models_dir, funetune_model_name, model_type, input_shape, fine_tune):
         super().__init__(model_type, input_shape)
-        self._fine_tune = True
+        self._fine_tune = fine_tune
         self._model = self._build_model()
         self._funetune_model_name = funetune_model_name
         self._models_dir = models_dir
@@ -209,14 +210,18 @@ class FineTunedModel(TrainedModel):
             initial_epochs: количество эпох начального обучения
             fine_tune_epochs: количество эпох дообучения
         """
+
+        log_dir = f"{self._models_dir}/logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
         
         history = self._model.fit(
             train_generator,
             epochs=initial_epochs,
             validation_data=val_generator,
             callbacks=[
+                tensorboard_callback,
                 ModelCheckpoint(
-                    os.path.join(self._models_dir, "initial_model.h5"),
+                    os.path.join(self._models_dir, self._funetune_model_name),
                     monitor="val_auc",
                     save_best_only=True,
                     mode="max"
@@ -254,6 +259,7 @@ class FineTunedModel(TrainedModel):
             initial_epoch=history.epoch[-1] + 1,
             validation_data=val_generator,
             callbacks=[
+                tensorboard_callback,
                 ModelCheckpoint(
                     os.path.join(self._models_dir, self._funetune_model_name),
                     monitor="val_auc",
@@ -283,6 +289,89 @@ class FineTunedModel(TrainedModel):
 
     def load_trained_model(self):
         self._model = tf.keras.models.load_model(os.path.join(self._models_dir, self._funetune_model_name))
+
+class PureModel(TunedModel):
+    
+    def __init__(self, models_dir, funetune_model_name, model_type, input_shape):
+        super().__init__(models_dir, funetune_model_name, model_type, input_shape, False)
+        self._funetune_model_name = funetune_model_name
+        self._models_dir = models_dir
+
+    def _build_model(self):
+        print("Pure model run")
+        inputs = Input(shape=self._input_shape)
+        
+        x = self._base_model(inputs)
+        x = GlobalAveragePooling2D()(x)
+        x = Dense(256, activation='relu')(x)
+        x = Dense(1, activation="sigmoid")(x)
+
+        model = Model(inputs=inputs, outputs=x)
+        model.compile(
+            optimizer=Adam(),
+            loss="binary_crossentropy",
+            metrics=[
+                tf.keras.metrics.Precision(name="precision"),
+                tf.keras.metrics.Recall(name="recall"),
+                tf.keras.metrics.AUC(name="auc"),
+            ]
+        )
+        return model
+
+    def fit(self, train_generator, val_generator, initial_epochs=10, fine_tune_epochs=10):
+        """
+        Двухэтапное обучение с возможностью дообучения
+    
+        Parameters:
+            train_generator: генератор тренировочных данных
+            val_generator: генератор валидационных данных
+            initial_epochs: количество эпох начального обучения
+            fine_tune_epochs: количество эпох дообучения
+        """
+
+        log_dir = f"{self._models_dir}/logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
+        
+        history = self._model.fit(
+            train_generator,
+            epochs=initial_epochs,
+            validation_data=val_generator,
+            callbacks=[
+                tensorboard_callback,
+                ModelCheckpoint(
+                    os.path.join(self._models_dir, self._funetune_model_name),
+                    monitor="val_auc",
+                    save_best_only=True,
+                    mode="max"
+                ),
+                EarlyStopping(
+                    monitor="val_loss",
+                    patience=3,
+                    restore_best_weights=True
+                )
+            ]
+        )
+        
+        return self._model, history
+
+class XPureModel(PureModel):
+    def __init__(self, models_dir):
+        print("XPure model run")
+        x_models_dir = os.path.join(models_dir, 'x')
+        model_type=ModelType.XCEPTION
+        funetune_model_name = 'xpure_model.h5'
+        input_shape = (299,299,3)
+        super().__init__(x_models_dir, funetune_model_name, model_type, input_shape)
+
+class FineTunedModel(TunedModel):
+
+    def __init__(self, models_dir, funetune_model_name, model_type, input_shape):
+        super().__init__(models_dir, funetune_model_name, model_type, input_shape, True)
+        self._model = self._build_model()
+        self._funetune_model_name = funetune_model_name
+        self._models_dir = models_dir
+        create_directory(models_dir)
+
 
 class XFineTunedModel(FineTunedModel):
     def __init__(self, models_dir):
