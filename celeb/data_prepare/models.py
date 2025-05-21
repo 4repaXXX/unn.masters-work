@@ -1,4 +1,5 @@
 import datetime
+import pandas as pd
 
 import tensorflow as tf
 import numpy as np
@@ -22,131 +23,12 @@ from enum import Enum
 import os
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-from data_prepare.dataset_tools import extract_zip_with_cleanup, prepare_and_save_data, create_directory
+from data_prepare.dataset_tools import create_directory
 
 class ModelType(Enum):
     XCEPTION = "xception"
     EFFICIENTNET = "efficientnet"
     CUSTOM = "custom_cnn"
-
-class DataLoader:
-    def __init__(self, image_archive_path, output_dir, model_type=ModelType.XCEPTION, augmentation=False):
-        self._image_archive_path = image_archive_path
-        self._model_type = model_type
-        self._augmentation = augmentation
-        self._preprocess_func = tf.keras.applications.xception.preprocess_input
-        self._output_dir = output_dir
-        self._postfix = 'x'
-        self._image_size = (299, 299)
-        if self._model_type == ModelType.EFFICIENTNET:
-            self._postfix = 'net'
-            self._preprocess_func = tf.keras.applications.efficientnet.preprocess_input
-            self._image_size = (224, 224)
-            
-
-    def load(self):
-        return self._init_data(os.path.join(self._output_dir, self._postfix))
-
-    def load_genrators(self):
-        train_dir, val_dir, test_dir = self._init_data(os.path.join(self._output_dir, self._postfix))
-        print(train_dir, val_dir, test_dir)
-        return self._create_data_generators(train_dir, val_dir, test_dir)
-
-    def _init_data(self, output_dir):
-        fake_images_path, real_images_path = extract_zip_with_cleanup(self._image_archive_path)
-        print(fake_images_path, real_images_path)
-        train_dir, val_dir, test_dir = prepare_and_save_data(
-            real_images_path, 
-            fake_images_path, 
-            output_dir
-        )
-        return train_dir, val_dir, test_dir
-
-    def _create_data_generators(
-        self,
-        train_dir, 
-        val_dir, 
-        test_dir,
-        batch_size=32,
-        random_state=42,
-        class_mode='binary'
-    ):
-        """
-        Создает потоковые генераторы для train/val/test данных
-    
-        Parameters:
-            data_dir (str): Путь к директории с данными (должна содержать train/val/test)
-            target_size (tuple): Размер изображений (ширина, высота)
-            batch_size (int): Размер батча
-            augmentation (bool): Применять ли аугментацию для тренировочных данных
-            class_mode (str): Тип классификации ('binary' или 'categorical')
-    
-        Returns:
-            tuple: (train_gen, val_gen, test_gen)
-        """
-        
-        if self._augmentation:
-            train_datagen = ImageDataGenerator(
-                preprocessing_function=preprocess_func,
-                rotation_range=20,
-                width_shift_range=0.2,
-                height_shift_range=0.2,
-                shear_range=0.2,
-                zoom_range=0.2,
-                horizontal_flip=True,
-                fill_mode='nearest'
-            )
-        else:
-            train_datagen = ImageDataGenerator(
-                preprocessing_function=self._preprocess_func
-            )
-        
-        val_test_datagen = ImageDataGenerator(
-            preprocessing_function=self._preprocess_func
-        )
-        
-        # Labels
-        # real/ -> class 0
-        # fake/ -> class 1
-        train_gen = train_datagen.flow_from_directory(
-            train_dir,
-            target_size=self._image_size,
-            batch_size=batch_size,
-            class_mode=class_mode,
-            shuffle=True,
-            seed=random_state
-        )
-        
-        val_gen = val_test_datagen.flow_from_directory(
-            val_dir,
-            target_size=self._image_size,
-            batch_size=batch_size,
-            class_mode=class_mode,
-            shuffle=False
-        )
-        
-        test_gen = val_test_datagen.flow_from_directory(
-            test_dir,
-            target_size=self._image_size,
-            batch_size=batch_size,
-            class_mode=class_mode,
-            shuffle=False
-        )
-        
-        print("\nClass indices:", train_gen.class_indices)
-        print(f"Train samples: {train_gen.samples}")
-        print(f"Validation samples: {val_gen.samples}")
-        print(f"Test samples: {test_gen.samples}")
-        
-        return train_gen, val_gen, test_gen
-
-class XDataLoader(DataLoader):
-    def __init__(self, image_archive_path, output_dir="data/dataset"):
-        super().__init__(image_archive_path, output_dir, ModelType.XCEPTION, False)
-
-class NetDataLoader(DataLoader):
-    def __init__(self, image_archive_path, output_dir="data/dataset"):
-        super().__init__(image_archive_path, output_dir, ModelType.EFFICIENTNET, False)
 
 class TrainedModel:
     def __init__(self, model_type, input_shape):
@@ -170,22 +52,50 @@ class TrainedModel:
         return base_model
 
 class TunedModel(TrainedModel):
-    def __init__(self, models_dir, funetune_model_name, model_type, input_shape, fine_tune):
+    def __init__(self, models_dir, results_dir, model_type, input_shape):
         super().__init__(model_type, input_shape)
-        self._fine_tune = fine_tune
         self._model = self._build_model()
+        self._models_dir = models_dir
+        self._results_dir = results_dir
+        create_directory(models_dir)
+        create_directory(results_dir)
+    
+
+    def predict(self, X_test):
+        y_pred = self._model.predict(X_test)
+        y_pred_df = pd.DataFrame(y_pred)
+        y_pred_df.to_csv(f'{self._results_dir}/y_pred.csv', index=False)
+        return y_pred
+
+    def evaluate(self, X_test, y_test):
+        return self._model.evaluate(X_test, y_test)
+
+    def load_trained_model(self):
+        self._model = tf.keras.models.load_model(os.path.join(self._models_dir, self._funetune_model_name))
+
+    def fit(self, train_generator, val_generator, initial_epochs=10, fine_tune_epochs=10):
+        model, history = self.fit(train_generator, val_generator, initial_epochs, fine_tune_epochs)
+        pure_history_df = pd.DataFrame(history.history)
+        pure_history_df.to_csv(f'{self._results_dir}/history.csv', index=False)
+        
+        return model, history
+
+    
+
+class PureModel(TunedModel):
+    
+    def __init__(self, models_dir, results_dir, funetune_model_name, model_type, input_shape):
+        super().__init__(models_dir, results_dir, model_type, input_shape)
         self._funetune_model_name = funetune_model_name
         self._models_dir = models_dir
-        create_directory(models_dir)
 
     def _build_model(self):
+        print("Pure model run")
         inputs = Input(shape=self._input_shape)
         
         x = self._base_model(inputs)
         x = GlobalAveragePooling2D()(x)
-        x = BatchNormalization()(x)
         x = Dense(256, activation='relu')(x)
-        x = Dropout(0.5)(x) 
         x = Dense(1, activation="sigmoid")(x)
 
         model = Model(inputs=inputs, outputs=x)
@@ -199,8 +109,8 @@ class TunedModel(TrainedModel):
             ]
         )
         return model
-    
-    def fit(self, train_generator, val_generator, initial_epochs=10, fine_tune_epochs=10):
+
+    def fit(self, train_generator, val_generator, initial_epochs=10):
         """
         Двухэтапное обучение с возможностью дообучения
     
@@ -234,8 +144,71 @@ class TunedModel(TrainedModel):
             ]
         )
         
-        if not self._fine_tune:
-            return self._model, history
+        return self._model, history
+
+class XPureModel(PureModel):
+    def __init__(self, models_dir, results_dir):
+        print("XPure model run")
+        results_dir = os.path.join(results_dir, 'xpure')
+        x_models_dir = os.path.join(models_dir, 'xpure')
+        model_type=ModelType.XCEPTION
+        funetune_model_name = 'xpure_model.h5'
+        input_shape = (299,299,3)
+        super().__init__(x_models_dir, results_dir, funetune_model_name, model_type, input_shape)
+        
+class NetPureModel(PureModel):
+    def __init__(self, models_dir, results_dir):
+        print("NetPure model run")
+        results_dir = os.path.join(results_dir, 'netpure')
+        x_models_dir = os.path.join(models_dir, 'netpure')
+        model_type=ModelType.EFFICIENTNET
+        funetune_model_name = 'netpure_model.h5'
+        input_shape = (224,224,3)
+        super().__init__(x_models_dir, results_dir, funetune_model_name, model_type, input_shape)
+        
+
+class FineTunedModel(TunedModel):
+
+    def __init__(self, models_dir, results_dir, funetune_model_name, model_type, input_shape):
+        super().__init__(models_dir, funetune_model_name, model_type, input_shape)
+        self._model = self._build_model()
+        self._funetune_model_name = funetune_model_name
+        self._models_dir = models_dir
+        create_directory(models_dir)
+
+    def fit(self, train_generator, val_generator, initial_epochs=10, fine_tune_epochs=10):
+        """
+        Двухэтапное обучение с возможностью дообучения
+    
+        Parameters:
+            train_generator: генератор тренировочных данных
+            val_generator: генератор валидационных данных
+            initial_epochs: количество эпох начального обучения
+            fine_tune_epochs: количество эпох дообучения
+        """
+
+        log_dir = f"{self._models_dir}/logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
+        
+        history = self._model.fit(
+            train_generator,
+            epochs=initial_epochs,
+            validation_data=val_generator,
+            callbacks=[
+                tensorboard_callback,
+                ModelCheckpoint(
+                    os.path.join(self._models_dir, self._funetune_model_name),
+                    monitor="val_auc",
+                    save_best_only=True,
+                    mode="max"
+                ),
+                EarlyStopping(
+                    monitor="val_loss",
+                    patience=3,
+                    restore_best_weights=True
+                )
+            ]
+        )
         
         self._base_model.trainable = True
         
@@ -281,114 +254,25 @@ class TunedModel(TrainedModel):
         
         return self._model, full_history
 
-    def predict(self, X_test):
-        return self._model.predict(X_test)
-
-    def evaluate(self, X_test, y_test):
-        return self._model.evaluate(X_test, y_test)
-
-    def load_trained_model(self):
-        self._model = tf.keras.models.load_model(os.path.join(self._models_dir, self._funetune_model_name))
-
-class PureModel(TunedModel):
-    
-    def __init__(self, models_dir, funetune_model_name, model_type, input_shape):
-        super().__init__(models_dir, funetune_model_name, model_type, input_shape, False)
-        self._funetune_model_name = funetune_model_name
-        self._models_dir = models_dir
-
-    def _build_model(self):
-        print("Pure model run")
-        inputs = Input(shape=self._input_shape)
-        
-        x = self._base_model(inputs)
-        x = GlobalAveragePooling2D()(x)
-        x = Dense(256, activation='relu')(x)
-        x = Dense(1, activation="sigmoid")(x)
-
-        model = Model(inputs=inputs, outputs=x)
-        model.compile(
-            optimizer=Adam(),
-            loss="binary_crossentropy",
-            metrics=[
-                tf.keras.metrics.Precision(name="precision"),
-                tf.keras.metrics.Recall(name="recall"),
-                tf.keras.metrics.AUC(name="auc"),
-            ]
-        )
-        return model
-
-    def fit(self, train_generator, val_generator, initial_epochs=10, fine_tune_epochs=10):
-        """
-        Двухэтапное обучение с возможностью дообучения
-    
-        Parameters:
-            train_generator: генератор тренировочных данных
-            val_generator: генератор валидационных данных
-            initial_epochs: количество эпох начального обучения
-            fine_tune_epochs: количество эпох дообучения
-        """
-
-        log_dir = f"{self._models_dir}/logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
-        
-        history = self._model.fit(
-            train_generator,
-            epochs=initial_epochs,
-            validation_data=val_generator,
-            callbacks=[
-                tensorboard_callback,
-                ModelCheckpoint(
-                    os.path.join(self._models_dir, self._funetune_model_name),
-                    monitor="val_auc",
-                    save_best_only=True,
-                    mode="max"
-                ),
-                EarlyStopping(
-                    monitor="val_loss",
-                    patience=3,
-                    restore_best_weights=True
-                )
-            ]
-        )
-        
-        return self._model, history
-
-class XPureModel(PureModel):
-    def __init__(self, models_dir):
-        print("XPure model run")
-        x_models_dir = os.path.join(models_dir, 'x')
-        model_type=ModelType.XCEPTION
-        funetune_model_name = 'xpure_model.h5'
-        input_shape = (299,299,3)
-        super().__init__(x_models_dir, funetune_model_name, model_type, input_shape)
-
-class FineTunedModel(TunedModel):
-
-    def __init__(self, models_dir, funetune_model_name, model_type, input_shape):
-        super().__init__(models_dir, funetune_model_name, model_type, input_shape, True)
-        self._model = self._build_model()
-        self._funetune_model_name = funetune_model_name
-        self._models_dir = models_dir
-        create_directory(models_dir)
-
 
 class XFineTunedModel(FineTunedModel):
-    def __init__(self, models_dir):
+    def __init__(self, models_dir, results_dir):
         x_models_dir = os.path.join(models_dir, 'x')
+        results_dir = os.path.join(models_dir, 'x')
         model_type=ModelType.XCEPTION
         input_shape=(299, 299, 3)
         funetune_model_name="xception_finetune_deepfake_model.h5"
-        super().__init__(x_models_dir, funetune_model_name, model_type, input_shape)
+        super().__init__(x_models_dir, results_dir, funetune_model_name, model_type, input_shape)
 
 
 class NetFineTunedModel(FineTunedModel):
-    def __init__(self, models_dir):
+    def __init__(self, models_dir, results_dir):
         model_type=ModelType.EFFICIENTNET
         funetune_model_name="net_finetune_deepfake_model.h5"
         net_models_dir = os.path.join(models_dir, 'net')
+        results_dir = os.path.join(results_dir, 'net')
         input_shape=(224, 224, 3)
-        super().__init__(net_models_dir, funetune_model_name, model_type, input_shape)
+        super().__init__(net_models_dir, results_dir, funetune_model_name, model_type, input_shape)
 
 
 class FeatureExtractorModel(TrainedModel):

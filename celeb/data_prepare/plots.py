@@ -4,6 +4,8 @@ import seaborn as sns
 from sklearn.metrics import precision_recall_curve, average_precision_score
 from sklearn.metrics import roc_curve, auc
 
+import pandas as pd
+
 def plot_history(history_df):
     plt.figure(figsize=(12, 6))
 
@@ -95,3 +97,25 @@ def roc_plot(y_true, y_pred):
     plt.grid(True)
     plt.savefig('results/roc_curve.png', dpi=300)
     plt.show()
+
+class CommonPlot:
+    def __init__(self, model):
+        self._y_pred = f'{model._results_dir}/y_pred.csv'
+        self._history = f'{model._results_dir}/history.csv'
+
+    def plot(test_gen):
+        y_pred = pd.read_csv(self._y_pred)
+        y_true = test_gen.labels
+        history_df = pd.read_csv(self._history)
+        history = {'history': history_df.to_dict()}
+
+        plot_history(finetune_loaded_history_df)
+        confusion_matrix_plot(y_pred, y_true, 0.5, 0.5)
+        precision_recall_plot(y_true, y_pred)
+        roc_plot(y_true, y_pred)
+
+        return y_pred, y_true
+
+        
+
+        
