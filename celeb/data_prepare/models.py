@@ -82,26 +82,33 @@ class TunedModel(TrainedModel):
         return model
     
 
-    def predict(self, X_test):
-        y_pred = self._model.predict(X_test)
-        y_pred_df = pd.DataFrame(y_pred)
-        y_pred_df.to_csv(f'{self._results_dir}/y_pred.csv', index=False)
-        return y_pred
-
     def evaluate(self, X_test, y_test):
         return self._model.evaluate(X_test, y_test)
 
     def load_trained_model(self):
         self._model = tf.keras.models.load_model(os.path.join(self._models_dir, self._funetune_model_name))
 
-    def fit(self, train_generator, val_generator, initial_epochs=10, fine_tune_epochs=10):
-        model, history = self.fit(train_generator, val_generator, initial_epochs, fine_tune_epochs)
+    
+class PersistModel(TunedModel):
+    def __init__(self, model, history_file_name='history.csv', ypred_file_name='y_pred.csv'):
+        self._history_file_name = history_file_name
+        self._ypred_file_name = ypred_file_name
+        self._model = model
+        self._results_dir = model._results_dir
+
+    def fit(self, train_generator, val_generator, initial_epochs=10):
+        print('Persist fitting run')
+        model, history = self._model.fit(train_generator, val_generator, initial_epochs)
         pure_history_df = pd.DataFrame(history.history)
-        pure_history_df.to_csv(f'{self._results_dir}/history.csv', index=False)
+        pure_history_df.to_csv(f'{self._results_dir}/{self._history_file_name}', index=False)
         
         return model, history
 
-    
+    def predict(self, X_test):
+        y_pred = self._model.predict(X_test)
+        y_pred_df = pd.DataFrame(y_pred)
+        y_pred_df.to_csv(f'{self._results_dir}/{self._ypred_file_name}', index=False)
+        return y_pred
 
 class PureModel(TunedModel):
     
@@ -124,7 +131,8 @@ class PureModel(TunedModel):
 
         log_dir = f"{self._models_dir}/logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
-        
+
+        print('Pure fitting run')
         history = self._model.fit(
             train_generator,
             epochs=initial_epochs,
