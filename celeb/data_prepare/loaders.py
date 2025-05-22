@@ -9,7 +9,6 @@ from data_prepare.models import ModelType
 class DataLoader:
     def __init__(self, image_archive_path, output_dir, preprocess_func, image_size):
         self._image_archive_path = image_archive_path
-        self._augmentation = augmentation
         self._preprocess_func = preprocess_func
         self._output_dir = output_dir
         self._image_size = image_size

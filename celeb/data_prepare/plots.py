@@ -103,13 +103,13 @@ class CommonPlot:
         self._y_pred = f'{model._results_dir}/y_pred.csv'
         self._history = f'{model._results_dir}/history.csv'
 
-    def plot(test_gen):
+    def plot(self, test_gen):
         y_pred = pd.read_csv(self._y_pred)
         y_true = test_gen.labels
         history_df = pd.read_csv(self._history)
         history = {'history': history_df.to_dict()}
 
-        plot_history(finetune_loaded_history_df)
+        plot_history(history_df)
         confusion_matrix_plot(y_pred, y_true, 0.5, 0.5)
         precision_recall_plot(y_true, y_pred)
         roc_plot(y_true, y_pred)

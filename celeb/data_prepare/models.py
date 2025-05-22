@@ -59,6 +59,27 @@ class TunedModel(TrainedModel):
         self._results_dir = results_dir
         create_directory(models_dir)
         create_directory(results_dir)
+
+    def _build_model(self):
+        print("Pure model run")
+        inputs = Input(shape=self._input_shape)
+        
+        x = self._base_model(inputs)
+        x = GlobalAveragePooling2D()(x)
+        x = Dense(256, activation='relu')(x)
+        x = Dense(1, activation="sigmoid")(x)
+
+        model = Model(inputs=inputs, outputs=x)
+        model.compile(
+            optimizer=Adam(),
+            loss="binary_crossentropy",
+            metrics=[
+                tf.keras.metrics.Precision(name="precision"),
+                tf.keras.metrics.Recall(name="recall"),
+                tf.keras.metrics.AUC(name="auc"),
+            ]
+        )
+        return model
     
 
     def predict(self, X_test):
@@ -89,26 +110,6 @@ class PureModel(TunedModel):
         self._funetune_model_name = funetune_model_name
         self._models_dir = models_dir
 
-    def _build_model(self):
-        print("Pure model run")
-        inputs = Input(shape=self._input_shape)
-        
-        x = self._base_model(inputs)
-        x = GlobalAveragePooling2D()(x)
-        x = Dense(256, activation='relu')(x)
-        x = Dense(1, activation="sigmoid")(x)
-
-        model = Model(inputs=inputs, outputs=x)
-        model.compile(
-            optimizer=Adam(),
-            loss="binary_crossentropy",
-            metrics=[
-                tf.keras.metrics.Precision(name="precision"),
-                tf.keras.metrics.Recall(name="recall"),
-                tf.keras.metrics.AUC(name="auc"),
-            ]
-        )
-        return model
 
     def fit(self, train_generator, val_generator, initial_epochs=10):
         """
@@ -170,8 +171,7 @@ class NetPureModel(PureModel):
 class FineTunedModel(TunedModel):
 
     def __init__(self, models_dir, results_dir, funetune_model_name, model_type, input_shape):
-        super().__init__(models_dir, funetune_model_name, model_type, input_shape)
-        self._model = self._build_model()
+        super().__init__(models_dir, results_dir, model_type, input_shape)
         self._funetune_model_name = funetune_model_name
         self._models_dir = models_dir
         create_directory(models_dir)
@@ -258,7 +258,7 @@ class FineTunedModel(TunedModel):
 class XFineTunedModel(FineTunedModel):
     def __init__(self, models_dir, results_dir):
         x_models_dir = os.path.join(models_dir, 'x')
-        results_dir = os.path.join(models_dir, 'x')
+        results_dir = os.path.join(results_dir, 'x')
         model_type=ModelType.XCEPTION
         input_shape=(299, 299, 3)
         funetune_model_name="xception_finetune_deepfake_model.h5"
