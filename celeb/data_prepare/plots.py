@@ -99,9 +99,11 @@ def roc_plot(y_true, y_pred):
     plt.show()
 
 class CommonPlot:
-    def __init__(self, model):
-        self._y_pred = f'{model._results_dir}/y_pred.csv'
-        self._history = f'{model._results_dir}/history.csv'
+    def __init__(self, persist_model):
+        self._y_pred = f'{persist_model._results_dir}/{persist_model._ypred_file_name}'
+        print(f'{persist_model._results_dir}/{persist_model._ypred_file_name}')
+        self._history = f'{persist_model._results_dir}/{persist_model._history_file_name}'
+        print(f'{persist_model._results_dir}/{persist_model._history_file_name}')
 
     def plot(self, test_gen):
         y_pred = pd.read_csv(self._y_pred)

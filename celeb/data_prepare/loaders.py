@@ -6,6 +6,10 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from data_prepare.dataset_tools import extract_zip_with_cleanup, prepare_and_save_data, create_directory
 from data_prepare.models import ModelType
 
+def combined_generator(*generators):
+    for gen in generators:
+        yield from gen 
+
 class DataLoader:
     def __init__(self, image_archive_path, output_dir, preprocess_func, image_size):
         self._image_archive_path = image_archive_path

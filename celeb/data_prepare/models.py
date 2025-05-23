@@ -82,11 +82,15 @@ class TunedModel(TrainedModel):
         return model
     
 
-    def evaluate(self, X_test, y_test):
-        return self._model.evaluate(X_test, y_test)
+    def evaluate(self, X_test):
+        return self._model.evaluate(X_test)
 
     def load_trained_model(self):
         self._model = tf.keras.models.load_model(os.path.join(self._models_dir, self._funetune_model_name))
+
+    def predict(self, X_test):
+        return self._model.predict(X_test)
+
 
     
 class PersistModel(TunedModel):
@@ -329,7 +333,6 @@ class CustomModel:
     def __init__(self, ex_feature_model, models_dir, model_name, learning_rate, input_dim=256, batch_size=32, epoch=10):
         self._models_dir = models_dir
         self._model_name = model_name
-        self._ex_feature_model = ex_feature_model
         self._batch_size = batch_size
         self._epoch = epoch
         self._learning_rate = learning_rate
